@@ -81,6 +81,7 @@ Content-Type: application/json
     "role": "researcher",
     "bio": null,
     "is_active": true,
+    "questions_authored": 12,
     "created_at": "2026-04-02T12:00:00",
     "updated_at": "2026-04-02T12:00:00"
   }
@@ -194,13 +195,16 @@ No auth required.
 
 ### Topics
 
-#### List Active Topics
+#### List Topics
 
 ```
 GET /api/topics
+GET /api/topics?include_inactive=true   (Admin+ only)
 ```
 
-No auth required. Returns array of topics sorted by name.
+No auth required for active-only listing. `include_inactive=true` requires Admin or higher (403 otherwise). Returns array sorted by name.
+
+`question_count` is the number of non-deleted questions referencing this topic (all statuses).
 
 ```json
 [
@@ -210,6 +214,7 @@ No auth required. Returns array of topics sorted by name.
     "slug": "constitutional_law",
     "description": null,
     "is_active": true,
+    "question_count": 24,
     "created_at": "...",
     "updated_at": "..."
   }
@@ -225,6 +230,20 @@ POST /api/topics
 ```
 
 Slug is auto-generated from name.
+
+#### Get Topic
+
+```
+GET /api/topics/{id}
+```
+
+Returns a single topic. Access rules mirror the list endpoint:
+- **Active topics** are publicly readable (no auth required)
+- **Inactive topics** require Admin+ (403 otherwise)
+- **Invalid token** returns 401 (re-login), not 403
+- Unknown ID returns 404
+
+Response shape is identical to a list item (including `question_count`).
 
 #### Update Topic (Admin+)
 
@@ -664,17 +683,87 @@ Returns topic/type/difficulty combinations with fewer than `threshold` approved 
 }
 ```
 
+#### Topic Stats
+
+```
+GET /api/stats/topics/{topic_id}
+```
+
+Per-topic breakdown of questions (all non-deleted, all statuses). Returns 404 if topic doesn't exist.
+
+```json
+{
+  "topic_id": "uuid",
+  "topic_name": "Constitutional Law",
+  "total": 24,
+  "by_status": [{ "label": "approved", "count": 18 }, { "label": "draft", "count": 6 }],
+  "by_question_type": [{ "label": "mcq", "count": 10 }, ...],
+  "by_cognitive_level": [...],
+  "by_difficulty": [...]
+}
+```
+
 ---
 
-### Researchers (Super Admin only)
+### Activity Feed
 
-#### List Researchers
+```
+GET /api/activity?limit=10&offset=0
+```
+
+Recent audit-log entries across all questions, newest first. Use for the dashboard activity feed. Any logged-in user.
+
+`limit` defaults to 10, max 100. `offset` for simple pagination. No `total` (it's a feed).
+
+`question_text` is truncated at 120 characters with an ellipsis (`…`).
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "question_id": "uuid",
+      "question_text": "Discuss the concept of fundamental rights…",
+      "actor_id": "uuid",
+      "actor_name": "Dr. Adekoya",
+      "action": "submitted",
+      "created_at": "2026-04-02T12:00:00"
+    }
+  ],
+  "limit": 10
+}
+```
+
+Actions: `created`, `edited`, `submitted`, `withdrawn`, `claimed`, `claim_released`, `reviewed`, `reverted`, `deleted`, `author_reassigned`
+
+---
+
+### Researchers
+
+#### List Researchers (Super Admin only)
 
 ```
 GET /api/researchers?page=1&page_size=20
 ```
 
-#### Update Researcher
+Each researcher includes `questions_authored` (count of non-deleted questions they authored).
+
+#### List Authors (any logged-in user)
+
+```
+GET /api/researchers/authors
+```
+
+Lightweight list for populating author filter dropdowns. Returns only active researchers who have authored ≥1 non-deleted question.
+
+```json
+[
+  { "id": "uuid", "name": "Dr. Adekoya" },
+  { "id": "uuid", "name": "Dr. Smith" }
+]
+```
+
+#### Update Researcher (Super Admin only)
 
 ```
 PUT /api/researchers/{id}
